@@ -3,39 +3,25 @@
  * See LICENSE in the project root for license information.
  */
 
-/* global global, Office, self, window, mailbox, mailboxItem */
+/* global g, global, Office, self, window, mailbox, mailboxItem, classifications */
 
 
 let mailboxItem;
 let mailbox;
+const g = getGlobal();
+
 Office.onReady(function(info) {
     // If needed, Office.js is ready to be called
-
-
     mailboxItem = Office.context.mailbox.item;
     mailbox = Office.context.mailbox;
 
-    console.log(`Office.js is now ready in ${info.host} on ${info.platform}`);
-
-
-});
-
-function action(event) {
-    const message = {
-        type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
-        message: "Performed action.",
-        icon: "Icon.80x80",
-        persistent: true,
-    };
-
-    // Show a notification message
-    Office.context.mailbox.item.notificationMessages.replaceAsync("action", message);
-
-    // Be sure to indicate when the add-in command function is complete
-    event.completed();
+for (let name in classifications) {
+	let classification = classifications[name];
+    g[classification.globalFunction] = actionMarkFactory(classification);
 }
 
-const g = getGlobal();
+    console.log(`Office.js is now ready in ${info.host} on ${info.platform}`);
+});
 
 function getGlobal() {
     return typeof self !== "undefined" ?
@@ -48,138 +34,74 @@ function getGlobal() {
 }
 
 // The add-in command functions need to be available in global scope
-g.action = action;
-g.actionMarkGreen = actionMarkGreen;
-g.actionMarkAmber = actionMarkAmber;
-g.actionMarkRed = actionMarkRed;
 g.validateBody = validateBody;
-
-/* TODO dynamic evaluation of action functions */
-
-function actionMarkGreen(event) {
-
-    const successMessage = {
-        type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
-        message: "Marked message green",
-        icon: "IconGreen.80x80",
-        persistent: false,
-    };
-
-    const errorMessage = {
-        type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
-        message: "Failed to mark message green",
-        icon: "IconGreen.80x80",
-        persistent: true,
-    };
-
-    setSubjectPrefix("[Classified Green 🟢]", function(ret) {
-
-        if (ret) {
-            // Show a notification message
-            Office.context.mailbox.item.notificationMessages.replaceAsync("action", successMessage);
-
-        } else {
-            // Show a notification message
-            Office.context.mailbox.item.notificationMessages.replaceAsync("action", errorMessage);
-        }
-
-
-        // Be sure to indicate when the add-in command function is complete
-        event.completed();
-
-    });
-}
-
-
-function actionMarkAmber(event) {
-    const successMessage = {
-        type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
-        message: "Marked message amber",
-        icon: "IconAmber.80x80",
-        persistent: false,
-    };
-
-    const errorMessage = {
-        type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
-        message: "Failed to mark message amber",
-        icon: "IconAmber.80x80",
-        persistent: true,
-    };
-
-    setSubjectPrefix("[Classified Amber 🟠]", function(ret) {
-
-        if (ret) {
-            // Show a notification message
-            Office.context.mailbox.item.notificationMessages.replaceAsync("action", successMessage);
-        } else {
-            // Show a notification message
-            Office.context.mailbox.item.notificationMessages.replaceAsync("action", errorMessage);
-        }
-
-
-        // Be sure to indicate when the add-in command function is complete
-        event.completed();
-
-    });
-}
-
-
-
-function actionMarkRed(event) {
-    const successMessage = {
-        type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
-        message: "Marked message red",
-        icon: "IconRed.80x80",
-        persistent: false,
-    };
-
-    const errorMessage = {
-        type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
-        message: "Failed to mark message red",
-        icon: "IconRed.80x80",
-        persistent: true,
-    };
-
-    setSubjectPrefix("[Classified Red 🔴]", function(ret) {
-
-        if (ret) {
-            // Show a notification message
-            Office.context.mailbox.item.notificationMessages.replaceAsync("action", successMessage);
-
-        } else {
-            // Show a notification message
-            Office.context.mailbox.item.notificationMessages.replaceAsync("action", errorMessage);
-
-        }
-
-
-        // Be sure to indicate when the add-in command function is complete
-        event.completed();
-
-    });
-}
 
 let classifications = {
     "green": {
-        "subject": "[Classified Green 🟢]"
+		"name": "TLP Green",
+		"globalFunction": "actionMarkGreen",
+        "subject": "[Classified Green 🟢]",
+        "icon80": "IconGreen.80x80"
     },
     "amber": {
-        "subject": "[Classified Amber 🟠]"
+		"name": "TLP Amber",
+		"globalFunction": "actionMarkAmber",
+        "subject": "[Classified Amber 🟠]",
+        "icon80": "IconOrange.80x80"
     },
     "red": {
-        "subject": "[Classified Red 🔴]"
+		"name": "TLP Red",
+		"globalFunction": "actionMarkRed",
+        "subject": "[Classified Red 🔴]",
+        "icon80": "IconRed.80x80"
     }
 }
 
-const regexp = /^(?:\s?re:\s?|\s?awr:\s?)*\s?\[classified (red|green|amber) \W\].*/u;
+
+const classifiedSubjectRegexp = /^(?:\s?re:\s?|\s?aw:\s?)*\s?\[classified (red|green|amber) \W\].*/u;
+
+function actionMarkFactory(classification) {
+	
+	return function(event) {
+		
+    let successMessage = {
+        type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
+        message: "Marked message " + classification.name,
+        icon: classification.icon80,
+        persistent: false,
+    };
+
+    let errorMessage = {
+        type: Office.MailboxEnums.ItemNotificationMessageType.ErrorMessage,
+        message: "Failed to mark message (requested " + classification.name + ")",
+    };
+
+    setSubjectPrefix(classification.subject, function(ret) {
+
+        if (ret) {
+            // Show a notification message
+            Office.context.mailbox.item.notificationMessages.replaceAsync("action", successMessage);
+
+        } else {
+            // Show an error message
+            Office.context.mailbox.item.notificationMessages.replaceAsync("action", errorMessage);
+        }
+
+
+        // Be sure to indicate when the add-in command function is complete
+        event.completed();
+
+    });
+    
+    };
+    
+}
+
 
 function checkSubjectClassified(subject) {
     subject = subject.toLowerCase();
-    if (regexp.test(subject)) {
-
-        console.log("Getting matches for " + subject);
-        let matches = subject.match(regexp);
-
+    if (classifiedSubjectRegexp.test(subject)) {
+        let matches = subject.match(classifiedSubjectRegexp);
         return classifications[matches[1]];
     } else {
         return false;
@@ -286,6 +208,9 @@ function setSubjectPrefix(prefix, callback) {
 
 
 }
+
+// Demo functions adapted from Microsoft
+// MIT License, https://github.com/OfficeDev/Office-Add-in-samples
 
 // Entry point for Contoso Message Body Checker add-in before send is allowed.
 // <param name="event">MessageSend event is automatically passed by BlockOnSend code to the function specified in the manifest.</param>
@@ -409,35 +334,28 @@ function checkBodyOnlyOnSendCallBack(asyncResult) {
 }
 
 
-
-// Borrowed from easyEws
+// Following functions adapted from easyEws
+// GNU Public License v3, https://github.com/davecra/easyEWS
 
 function asyncEws(soap, successCallback, errorCallback) {
 
-    console.log("Starting call");
     mailbox.makeEwsRequestAsync(soap, function(ewsResult) {
-        console.log("Returning from call");
         if (ewsResult.status === Office.AsyncResultStatus.Succeeded) {
             console.log("makeEwsRequestAsync success. " + ewsResult.status);
             let parser = new DOMParser();
             let xmlDoc = parser.parseFromString(ewsResult.value, "text/xml");
             successCallback(xmlDoc);
-
         } else {
             console.log("makeEwsRequestAsync failed. " + ewsResult.error);
             errorCallback(ewsResult.error);
         }
     });
 
-
 };
 
-
 function getNodes(node, elementNameWithNS) {
-    /** @type {string} */
-    var elementWithoutNS = elementNameWithNS.substring(elementNameWithNS.indexOf(":") + 1);
-    /** @type {array} */
-    var retVal = node.getElementsByTagName(elementNameWithNS);
+    let elementWithoutNS = elementNameWithNS.substring(elementNameWithNS.indexOf(":") + 1);
+    let retVal = node.getElementsByTagName(elementNameWithNS);
     if (retVal == null || retVal.length == 0) {
         retVal = node.getElementsByTagName(elementWithoutNS);
     }
@@ -445,8 +363,7 @@ function getNodes(node, elementNameWithNS) {
 };
 
 function getSoapHeader(request) {
-    /** @type {string} */
-    var result =
+    let result =
         '<?xml version="1.0" encoding="utf-8"?>' +
         '<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"' +
         '               xmlns:xsd="http://www.w3.org/2001/XMLSchema"' +
@@ -462,8 +379,11 @@ function getSoapHeader(request) {
 };
 
 function findConversationSubjects(conversationId, successCallback, errorCallback) {
-    /** @type {string} */
-    var soap =
+	if (!conversationId) {
+			// Trivial case, no conversations here
+			successCallback([]);
+	}
+    let soap =
         '       <m:GetConversationItems>' +
         '           <m:ItemShape>' +
         '               <t:BaseShape>IdOnly</t:BaseShape>' +
@@ -484,12 +404,11 @@ function findConversationSubjects(conversationId, successCallback, errorCallback
         '           </m:Conversations>' +
         '       </m:GetConversationItems>';
     soap = getSoapHeader(soap);
-    console.log("got soap header");
     // Make EWS call
     asyncEws(soap, function(xmlDoc) {
         let nodes = getNodes(xmlDoc, "t:Subject");
-        var msgs = [];
-        for (msg of nodes) {
+        let msgs = [];
+        for (let msg of nodes) {
             msgs.push(msg.textContent);
         }
         successCallback(msgs);
