@@ -15,10 +15,10 @@ Office.onReady(function(info) {
     mailboxItem = Office.context.mailbox.item;
     mailbox = Office.context.mailbox;
 
-for (let name in classifications) {
-	let classification = classifications[name];
-    g[classification.globalFunction] = actionMarkFactory(classification);
-}
+    for (let name in classifications) {
+        let classification = classifications[name];
+        g[classification.globalFunction] = actionMarkFactory(classification);
+    }
 
     console.log(`Office.js is now ready in ${info.host} on ${info.platform}`);
 });
@@ -38,90 +38,113 @@ g.validateBody = validateBody;
 
 let classifications = {
     "green": {
-		"name": "TLP Green",
-		"globalFunction": "actionMarkGreen",
+        "name": "TLP Green",
+        "globalFunction": "actionMarkGreen",
         "subject": "[Classified Green 🟢]",
         "icon80": "IconGreen.80x80"
     },
     "amber": {
-		"name": "TLP Amber",
-		"globalFunction": "actionMarkAmber",
+        "name": "TLP Amber",
+        "globalFunction": "actionMarkAmber",
         "subject": "[Classified Amber 🟠]",
         "icon80": "IconOrange.80x80"
     },
     "red": {
-		"name": "TLP Red",
-		"globalFunction": "actionMarkRed",
+        "name": "TLP Red",
+        "globalFunction": "actionMarkRed",
         "subject": "[Classified Red 🔴]",
         "icon80": "IconRed.80x80"
     }
 }
 
+const classifierSubjectLength = classifications["green"].subject.length;
+const classifierRegexp = /\s*\[classified (red|green|amber) \W\]\s*/giu;
+const classifiedSubjectRegexp = /^(?:\s?re:\s?|\s?aw:\s?)*\s*\[classified (red|green|amber) \W\].*/iu;
 
-const classifiedSubjectRegexp = /^(?:\s?re:\s?|\s?aw:\s?)*\s?\[classified (red|green|amber) \W\].*/u;
-
-function actionMarkFactory(classification) {
-	
-	return function(event) {
-		
-    let successMessage = {
-        type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
-        message: "Marked message " + classification.name,
-        icon: classification.icon80,
-        persistent: false,
-    };
-
-    let errorMessage = {
-        type: Office.MailboxEnums.ItemNotificationMessageType.ErrorMessage,
-        message: "Failed to mark message (requested " + classification.name + ")",
-    };
-
-    setSubjectPrefix(classification.subject, function(ret) {
-
-        if (ret) {
-            // Show a notification message
-            Office.context.mailbox.item.notificationMessages.replaceAsync("action", successMessage);
-
-        } else {
-            // Show an error message
-            Office.context.mailbox.item.notificationMessages.replaceAsync("action", errorMessage);
-        }
-
-
-        // Be sure to indicate when the add-in command function is complete
-        event.completed();
-
-    });
-    
-    };
-    
+function removeClassification(str) {
+    return str.replace(classifierRegexp, " ").trim();
 }
 
+function addClassificationPrefix(classification, str) {
+    if (!classification) {
+        return str;
+    }
+    return classification.subject + " " + str;
+}
 
-function checkSubjectClassified(subject) {
+function getClassification(subject) {
     subject = subject.toLowerCase();
     if (classifiedSubjectRegexp.test(subject)) {
         let matches = subject.match(classifiedSubjectRegexp);
         return classifications[matches[1]];
     } else {
-        return false;
+        return null;
     }
 }
 
+function normalizeClassification(subject) {
+    let classification = getClassification(subject);
+
+    if (!classification) {
+        return subject
+    }
+
+    subject = removeClassification(subject)
+    subject = addClassificationPrefix(classification, subject)
+    return subject
+}
+
+function actionMarkFactory(classification) {
+
+    return function(event) {
+
+        let successMessage = {
+            type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
+            message: "Marked message " + classification.name,
+            icon: classification.icon80,
+            persistent: false,
+        };
+
+        let errorMessage = {
+            type: Office.MailboxEnums.ItemNotificationMessageType.ErrorMessage,
+            message: "Failed to mark message (requested " + classification.name + ")",
+        };
+
+        setSubjectPrefix(classification, function(ret) {
+
+            if (ret) {
+                // Show a notification message
+                Office.context.mailbox.item.notificationMessages.replaceAsync("action", successMessage);
+
+            } else {
+                // Show an error message
+                Office.context.mailbox.item.notificationMessages.replaceAsync("action", errorMessage);
+            }
+
+
+            // Be sure to indicate when the add-in command function is complete
+            event.completed();
+
+        });
+
+    };
+
+}
+
 // Set the subject of the item that the user is composing.
-function setSubjectPrefix(prefix, callback) {
+function setSubjectPrefix(requestedClassification, callback) {
 
     // Check conversation history
     findConversationSubjects(mailboxItem.conversationId, function(values) {
 
         let classifiedConversation = false;
-        let classification = "";
+        let classificationConversation = "";
 
         for (value of values) {
-            let curClassification = checkSubjectClassified(value);
+            let curClassification = getClassification(value);
             if (curClassification) {
                 classifiedConversation = true;
-                classification = curClassification;
+                classificationConversation = curClassification;
                 break;
             }
         }
@@ -135,44 +158,38 @@ function setSubjectPrefix(prefix, callback) {
                 } else {
                     // Successfully got the subject, display it.
 
-                    let curClassification = checkSubjectClassified(asyncResult.value)
+                    let subject = asyncResult.value;
+                    let curClassification = getClassification(subject);
 
                     if (curClassification) {
                         // Item subject classified
 
                         if (classifiedConversation) {
-                            // TODO refactor into preflight methods, force marking for now
                             // Item is marked and part of classified conversation
-                            
-                            if (curClassification.subject === classification.subject && classification.subject === prefix) {
-								// Classification already matches, nothing to do :)
-								callback(true);
-								return;
-							} else {	                         
+                            if (curClassification.subject === classificationConversation.subject && classificationConversation.subject === requestedClassification.subject) {
+                                // Classification already matches, normalize
+                                subject = normalizeClassification(subject);
+                            } else {
+                                // Do not allow reclassifying	                         
                                 callback(false);
                                 return;
                             }
                             //prefix = curClassification.subject;
                         } else {
-                            // Item is marked and part of classified conversation
-                            callback(false);
-                            return;
+                            // Item is marked and not part of classified conversation, allow changing
+                            subject = removeClassification(subject);
+                            subject = addClassificationPrefix(requestedClassification, subject);
                         }
-
-
                     } else {
-
                         if (classifiedConversation) {
-                            // TODO refactor into preflight methods, force marking for now
+
                             // Iten is unmarked, and part of classified conversation, force mark
-                            prefix = classification.subject;
+                            subject = addClassificationPrefix(classificationConversation, subject);
                         } else {
                             // Proceed with marking image
+                            subject = addClassificationPrefix(requestedClassification, subject);
                         }
-
                     }
-
-                    subject = prefix + ' ' + asyncResult.value;
 
                     mailboxItem.subject.setAsync(
                         subject, null,
@@ -209,16 +226,76 @@ function setSubjectPrefix(prefix, callback) {
 
 }
 
+
+function validateBody(event) {
+    /*mailboxItem.body.getAsync("html", {
+        asyncContext: event
+    }, checkBodyOnlyOnSendCallBack);*/
+    forceClassificationSubject(event);
+}
+
+// Check if the subject should be changed. If it is already changed allow send. Otherwise change it.
+// <param name="event">MessageSend event passed from the calling function.</param>
+function forceClassificationSubject(event) {
+    mailboxItem.subject.getAsync({
+            asyncContext: event
+        },
+        function(asyncResult) {
+
+            let subject = asyncResult.value;
+            let curClassification = getClassification(subject);
+
+            if (!curClassification) {
+                mailboxItem.notificationMessages.addAsync('NoSend', {
+                    type: 'errorMessage',
+                    message: 'Please choose a classification for this email.'
+                });
+                asyncResult.asyncContext.completed({
+                    allowEvent: false
+                });
+                return;
+            }
+
+            subject = normalizeClassification(subject);
+
+            subjectOnSendChange(subject, asyncResult.asyncContext);
+
+        }
+
+
+    );
+}
+
+function subjectOnSendChange(subject, event) {
+    mailboxItem.subject.setAsync(
+        subject, {
+            asyncContext: event
+        },
+        function(asyncResult) {
+            if (asyncResult.status == Office.AsyncResultStatus.Failed) {
+                mailboxItem.notificationMessages.addAsync('NoSend', {
+                    type: 'errorMessage',
+                    message: 'Unable to set the subject.'
+                });
+
+                // Block send.
+                asyncResult.asyncContext.completed({
+                    allowEvent: false
+                });
+            } else {
+                // Allow send.
+                asyncResult.asyncContext.completed({
+                    allowEvent: true
+                });
+            }
+
+        });
+}
+
+
 // Demo functions adapted from Microsoft
 // MIT License, https://github.com/OfficeDev/Office-Add-in-samples
 
-// Entry point for Contoso Message Body Checker add-in before send is allowed.
-// <param name="event">MessageSend event is automatically passed by BlockOnSend code to the function specified in the manifest.</param>
-function validateBody(event) {
-    mailboxItem.body.getAsync("html", {
-        asyncContext: event
-    }, checkBodyOnlyOnSendCallBack);
-}
 
 // Invoke by Contoso Subject and CC Checker add-in before send is allowed.
 // <param name="event">MessageSend event is automatically passed by BlockOnSend code to the function specified in the manifest.</param>
@@ -275,34 +352,6 @@ function addCCOnSend(event) {
     });
 }
 
-// Check if the subject should be changed. If it is already changed allow send, otherwise change it.
-// <param name="subject">Subject to set.</param>
-// <param name="event">MessageSend event passed from the calling function.</param>
-function subjectOnSendChange(subject, event) {
-    mailboxItem.subject.setAsync(
-        subject, {
-            asyncContext: event
-        },
-        function(asyncResult) {
-            if (asyncResult.status == Office.AsyncResultStatus.Failed) {
-                mailboxItem.notificationMessages.addAsync('NoSend', {
-                    type: 'errorMessage',
-                    message: 'Unable to set the subject.'
-                });
-
-                // Block send.
-                asyncResult.asyncContext.completed({
-                    allowEvent: false
-                });
-            } else {
-                // Allow send.
-                asyncResult.asyncContext.completed({
-                    allowEvent: true
-                });
-            }
-
-        });
-}
 
 // Check if the body contains a specific set of blocked words. If it contains the blocked words, block email from being sent. Otherwise allows sending.
 // <param name="asyncResult">MessageSend event passed from the calling function.</param>
@@ -379,10 +428,10 @@ function getSoapHeader(request) {
 };
 
 function findConversationSubjects(conversationId, successCallback, errorCallback) {
-	if (!conversationId) {
-			// Trivial case, no conversations here
-			successCallback([]);
-	}
+    if (!conversationId) {
+        // Trivial case, no conversations here
+        successCallback([]);
+    }
     let soap =
         '       <m:GetConversationItems>' +
         '           <m:ItemShape>' +
