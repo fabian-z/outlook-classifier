@@ -3,7 +3,7 @@
  * See LICENSE in the project root for license information.
  */
 
-/* global g, global, Office, self, window, mailbox, mailboxItem, classifications */
+/* global g, global, Office, self, window, mailbox, mailboxItem, classifications, classifierRegexp, classifiedSubjectRegexp */
 
 
 let mailboxItem;
@@ -57,7 +57,6 @@ let classifications = {
     }
 }
 
-const classifierSubjectLength = classifications["green"].subject.length;
 const classifierRegexp = /\s*\[classified (red|green|amber) \W\]\s*/giu;
 const classifiedSubjectRegexp = /^(?:\s?re:\s?|\s?aw:\s?)*\s*\[classified (red|green|amber) \W\].*/iu;
 
@@ -120,7 +119,6 @@ function actionMarkFactory(classification) {
                 // Show an error message
                 Office.context.mailbox.item.notificationMessages.replaceAsync("action", errorMessage);
             }
-
 
             // Be sure to indicate when the add-in command function is complete
             event.completed();
@@ -255,16 +253,23 @@ function forceClassificationSubject(event) {
                 });
                 return;
             }
-
-            subject = normalizeClassification(subject);
-
-            subjectOnSendChange(subject, asyncResult.asyncContext);
-
-        }
-
-
-    );
+            
+            // Got valid classification, force normalization and category
+            Office.context.mailbox.item.saveAsync(
+			function callback(result) {
+				let itemId = result.value;
+				setCategory(itemId, curClassification.name, asyncResult.asyncContext, function(context) {
+					subject = normalizeClassification(subject);
+					subjectOnSendChange(subject, context);
+				});
+			});
+			
+				
+			// Process the result.
+			});
+            
 }
+
 
 function subjectOnSendChange(subject, event) {
     mailboxItem.subject.setAsync(
@@ -467,3 +472,45 @@ function findConversationSubjects(conversationId, successCallback, errorCallback
             errorCallback(errorDetails);
     });
 };
+
+function setCategory(itemId, category, context, callback) {
+	// ignore missing item ID to improve UX
+	if (!itemId) {
+		console.log("Ignoring invalid itemId in setCategory: "+itemId)
+		callback(context);
+		return;
+	}
+	
+	let soapUpdate = `<UpdateItem MessageDisposition="SaveOnly" ConflictResolution="AlwaysOverwrite" xmlns="http://schemas.microsoft.com/exchange/services/2006/messages">
+			<ItemChanges>
+				<t:ItemChange>
+					<t:ItemId Id="`+itemId+`"/>
+					<t:Updates>
+						<t:SetItemField>
+							<t:ExtendedFieldURI PropertySetId="00020329-0000-0000-C000-000000000046" PropertyName="Keywords" PropertyType="StringArray" />
+							<t:Message>
+								<t:ExtendedProperty>
+									<t:ExtendedFieldURI PropertySetId="00020329-0000-0000-C000-000000000046" PropertyName="Keywords" PropertyType="StringArray" />
+									<t:Values>
+										<t:Value>`+category+`</t:Value>
+									</t:Values>
+								</t:ExtendedProperty>
+							</t:Message>
+						</t:SetItemField>
+					</t:Updates>
+				</t:ItemChange>
+			</ItemChanges>
+		</UpdateItem>`;
+    
+  let soap = getSoapHeader(soapUpdate);
+ 
+  asyncEws(soap, function(xmlDoc) {
+       console.log("Successfully set category: " + xmlDoc);
+       callback(context);
+
+    }, function(errorDetails) {
+      console.log("Error setting category: " + errorDetails);
+      callback(context);
+  });    
+     
+}
