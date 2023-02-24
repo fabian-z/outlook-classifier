@@ -6,7 +6,7 @@ function _arrayLikeToArray(arr, len) { if (len == null || len > arr.length) len 
  * See LICENSE in the project root for license information.
  */
 
-/* global g, global, Office, self, window, mailbox, mailboxItem, classifications */
+/* global g, global, Office, self, window, mailbox, mailboxItem, classifications, classifierRegexp, classifiedSubjectRegexp */
 
 var mailboxItem;
 var mailbox;
@@ -47,7 +47,35 @@ var classifications = {
     "icon80": "IconRed.80x80"
   }
 };
-var classifiedSubjectRegexp = /^(?:[\t-\r \xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]?re:[\t-\r \xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]?|[\t-\r \xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]?aw:[\t-\r \xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]?)*[\t-\r \xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]?\[classified (red|green|amber) (?:[\0-\/:-@\[-\^`\{-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])\](?:[\0-\t\x0B\f\x0E-\u2027\u202A-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*/;
+var classifierRegexp = /[\t-\r \xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]*\[cla[s\u017F][s\u017F]ified (red|green|amber) (?:[\0-\/:-@\[-\^`\{-\u017E\u0180-\u2129\u212B-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])\][\t-\r \xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]*/gi;
+var classifiedSubjectRegexp = /^(?:[\t-\r \xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]?re:[\t-\r \xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]?|[\t-\r \xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]?aw:[\t-\r \xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]?)*[\t-\r \xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]*\[cla[s\u017F][s\u017F]ified (red|green|amber) (?:[\0-\/:-@\[-\^`\{-\u017E\u0180-\u2129\u212B-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])\](?:[\0-\t\x0B\f\x0E-\u2027\u202A-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*/i;
+function removeClassification(str) {
+  return str.replace(classifierRegexp, " ").trim();
+}
+function addClassificationPrefix(classification, str) {
+  if (!classification) {
+    return str;
+  }
+  return classification.subject + " " + str;
+}
+function getClassification(subject) {
+  subject = subject.toLowerCase();
+  if (classifiedSubjectRegexp.test(subject)) {
+    var matches = subject.match(classifiedSubjectRegexp);
+    return classifications[matches[1]];
+  } else {
+    return null;
+  }
+}
+function normalizeClassification(subject) {
+  var classification = getClassification(subject);
+  if (!classification) {
+    return subject;
+  }
+  subject = removeClassification(subject);
+  subject = addClassificationPrefix(classification, subject);
+  return subject;
+}
 function actionMarkFactory(classification) {
   return function (event) {
     var successMessage = {
@@ -60,7 +88,7 @@ function actionMarkFactory(classification) {
       type: Office.MailboxEnums.ItemNotificationMessageType.ErrorMessage,
       message: "Failed to mark message (requested " + classification.name + ")"
     };
-    setSubjectPrefix(classification.subject, function (ret) {
+    setSubjectPrefix(classification, function (ret) {
       if (ret) {
         // Show a notification message
         Office.context.mailbox.item.notificationMessages.replaceAsync("action", successMessage);
@@ -74,31 +102,22 @@ function actionMarkFactory(classification) {
     });
   };
 }
-function checkSubjectClassified(subject) {
-  subject = subject.toLowerCase();
-  if (classifiedSubjectRegexp.test(subject)) {
-    var matches = subject.match(classifiedSubjectRegexp);
-    return classifications[matches[1]];
-  } else {
-    return false;
-  }
-}
 
 // Set the subject of the item that the user is composing.
-function setSubjectPrefix(prefix, callback) {
+function setSubjectPrefix(requestedClassification, callback) {
   // Check conversation history
   findConversationSubjects(mailboxItem.conversationId, function (values) {
     var classifiedConversation = false;
-    var classification = "";
+    var classificationConversation = "";
     var _iterator = _createForOfIteratorHelper(values),
       _step;
     try {
       for (_iterator.s(); !(_step = _iterator.n()).done;) {
         value = _step.value;
-        var curClassification = checkSubjectClassified(value);
+        var curClassification = getClassification(value);
         if (curClassification) {
           classifiedConversation = true;
-          classification = curClassification;
+          classificationConversation = curClassification;
           break;
         }
       }
@@ -116,39 +135,37 @@ function setSubjectPrefix(prefix, callback) {
       } else {
         // Successfully got the subject, display it.
 
-        var curClassification = checkSubjectClassified(asyncResult.value);
+        var _subject = asyncResult.value;
+        var curClassification = getClassification(_subject);
         if (curClassification) {
           // Item subject classified
 
           if (classifiedConversation) {
-            // TODO refactor into preflight methods, force marking for now
             // Item is marked and part of classified conversation
-
-            if (curClassification.subject === classification.subject && classification.subject === prefix) {
-              // Classification already matches, nothing to do :)
-              callback(true);
-              return;
+            if (curClassification.subject === classificationConversation.subject && classificationConversation.subject === requestedClassification.subject) {
+              // Classification already matches, normalize
+              _subject = normalizeClassification(_subject);
             } else {
+              // Do not allow reclassifying	                         
               callback(false);
               return;
             }
             //prefix = curClassification.subject;
           } else {
-            // Item is marked and part of classified conversation
-            callback(false);
-            return;
+            // Item is marked and not part of classified conversation, allow changing
+            _subject = removeClassification(_subject);
+            _subject = addClassificationPrefix(requestedClassification, _subject);
           }
         } else {
           if (classifiedConversation) {
-            // TODO refactor into preflight methods, force marking for now
             // Iten is unmarked, and part of classified conversation, force mark
-            prefix = classification.subject;
+            _subject = addClassificationPrefix(classificationConversation, _subject);
           } else {
             // Proceed with marking image
+            _subject = addClassificationPrefix(requestedClassification, _subject);
           }
         }
-        subject = prefix + ' ' + asyncResult.value;
-        mailboxItem.subject.setAsync(subject, null, function (asyncResult) {
+        mailboxItem.subject.setAsync(_subject, null, function (asyncResult) {
           if (asyncResult.status == Office.AsyncResultStatus.Failed) {
             console.log(asyncResult.error.message);
             callback(false);
@@ -165,17 +182,70 @@ function setSubjectPrefix(prefix, callback) {
     callback(false);
   });
 }
+function validateBody(event) {
+  /*mailboxItem.body.getAsync("html", {
+      asyncContext: event
+  }, checkBodyOnlyOnSendCallBack);*/
+  forceClassificationSubject(event);
+}
+
+// Check if the subject should be changed. If it is already changed allow send. Otherwise change it.
+// <param name="event">MessageSend event passed from the calling function.</param>
+function forceClassificationSubject(event) {
+  mailboxItem.subject.getAsync({
+    asyncContext: event
+  }, function (asyncResult) {
+    var subject = asyncResult.value;
+    var curClassification = getClassification(subject);
+    if (!curClassification) {
+      mailboxItem.notificationMessages.addAsync('NoSend', {
+        type: 'errorMessage',
+        message: 'Please choose a classification for this email.'
+      });
+      asyncResult.asyncContext.completed({
+        allowEvent: false
+      });
+      return;
+    }
+
+    // Got valid classification, force normalization and category
+    Office.context.mailbox.item.saveAsync(function callback(result) {
+      var itemId = result.value;
+      setCategory(itemId, curClassification.name, asyncResult.asyncContext, function (context) {
+        subject = normalizeClassification(subject);
+        subjectOnSendChange(subject, context);
+      });
+    });
+
+    // Process the result.
+  });
+}
+
+function subjectOnSendChange(subject, event) {
+  mailboxItem.subject.setAsync(subject, {
+    asyncContext: event
+  }, function (asyncResult) {
+    if (asyncResult.status == Office.AsyncResultStatus.Failed) {
+      mailboxItem.notificationMessages.addAsync('NoSend', {
+        type: 'errorMessage',
+        message: 'Unable to set the subject.'
+      });
+
+      // Block send.
+      asyncResult.asyncContext.completed({
+        allowEvent: false
+      });
+    } else {
+      // Allow send.
+      asyncResult.asyncContext.completed({
+        allowEvent: true
+      });
+    }
+  });
+}
 
 // Demo functions adapted from Microsoft
 // MIT License, https://github.com/OfficeDev/Office-Add-in-samples
-
-// Entry point for Contoso Message Body Checker add-in before send is allowed.
-// <param name="event">MessageSend event is automatically passed by BlockOnSend code to the function specified in the manifest.</param>
-function validateBody(event) {
-  mailboxItem.body.getAsync("html", {
-    asyncContext: event
-  }, checkBodyOnlyOnSendCallBack);
-}
 
 // Invoke by Contoso Subject and CC Checker add-in before send is allowed.
 // <param name="event">MessageSend event is automatically passed by BlockOnSend code to the function specified in the manifest.</param>
@@ -226,32 +296,6 @@ function shouldChangeSubjectOnSend(event) {
 function addCCOnSend(event) {
   mailboxItem.cc.setAsync(['Contoso@contoso.onmicrosoft.com'], {
     asyncContext: event
-  });
-}
-
-// Check if the subject should be changed. If it is already changed allow send, otherwise change it.
-// <param name="subject">Subject to set.</param>
-// <param name="event">MessageSend event passed from the calling function.</param>
-function subjectOnSendChange(subject, event) {
-  mailboxItem.subject.setAsync(subject, {
-    asyncContext: event
-  }, function (asyncResult) {
-    if (asyncResult.status == Office.AsyncResultStatus.Failed) {
-      mailboxItem.notificationMessages.addAsync('NoSend', {
-        type: 'errorMessage',
-        message: 'Unable to set the subject.'
-      });
-
-      // Block send.
-      asyncResult.asyncContext.completed({
-        allowEvent: false
-      });
-    } else {
-      // Allow send.
-      asyncResult.asyncContext.completed({
-        allowEvent: true
-      });
-    }
   });
 }
 
@@ -342,3 +386,20 @@ function findConversationSubjects(conversationId, successCallback, errorCallback
   });
 }
 ;
+function setCategory(itemId, category, context, callback) {
+  // ignore missing item ID to improve UX
+  if (!itemId) {
+    console.log("Ignoring invalid itemId in setCategory: " + itemId);
+    callback(context);
+    return;
+  }
+  var soapUpdate = "<UpdateItem MessageDisposition=\"SaveOnly\" ConflictResolution=\"AlwaysOverwrite\" xmlns=\"http://schemas.microsoft.com/exchange/services/2006/messages\">\n\t\t\t<ItemChanges>\n\t\t\t\t<t:ItemChange>\n\t\t\t\t\t<t:ItemId Id=\"" + itemId + "\"/>\n\t\t\t\t\t<t:Updates>\n\t\t\t\t\t\t<t:SetItemField>\n\t\t\t\t\t\t\t<t:ExtendedFieldURI PropertySetId=\"00020329-0000-0000-C000-000000000046\" PropertyName=\"Keywords\" PropertyType=\"StringArray\" />\n\t\t\t\t\t\t\t<t:Message>\n\t\t\t\t\t\t\t\t<t:ExtendedProperty>\n\t\t\t\t\t\t\t\t\t<t:ExtendedFieldURI PropertySetId=\"00020329-0000-0000-C000-000000000046\" PropertyName=\"Keywords\" PropertyType=\"StringArray\" />\n\t\t\t\t\t\t\t\t\t<t:Values>\n\t\t\t\t\t\t\t\t\t\t<t:Value>" + category + "</t:Value>\n\t\t\t\t\t\t\t\t\t</t:Values>\n\t\t\t\t\t\t\t\t</t:ExtendedProperty>\n\t\t\t\t\t\t\t</t:Message>\n\t\t\t\t\t\t</t:SetItemField>\n\t\t\t\t\t</t:Updates>\n\t\t\t\t</t:ItemChange>\n\t\t\t</ItemChanges>\n\t\t</UpdateItem>";
+  var soap = getSoapHeader(soapUpdate);
+  asyncEws(soap, function (xmlDoc) {
+    console.log("Successfully set category: " + xmlDoc);
+    callback(context);
+  }, function (errorDetails) {
+    console.log("Error setting category: " + errorDetails);
+    callback(context);
+  });
+}
