@@ -8,7 +8,17 @@ Project work for DHBW Lörrach, Lecture New Concepts
 
 TLP Classification solution for Outlook/Exchange environments (on-premise and Office365) 
 
-Built and tested using Add-In API Level 1.5 and EWS, compatible with on-premise and Office 365
+# Features
+
+* Compatible with Outlook / Exchange On-Premise and Cloud
+    * Tested with Exchange & Outlook 2019
+* Forces classification
+    * Choose classification for messages with good user experience
+    * Force conversations to retain classification
+* Classification in subject
+    * Visible to end-users across SMTP boundaries and different systems
+    * Normalizes conversation subjects
+* Additional category support
 
 # Quick Start
 
@@ -36,3 +46,19 @@ Get-User -Filter {RecipientTypeDetails -eq 'UserMailbox'}|Set-CASMailbox -OwaMai
 ```
 
 See [Microsoft Add-In documentation](https://learn.microsoft.com/en-us/office/dev/add-ins/outlook/outlook-on-send-addins?tabs=classic) for more options and details.
+
+## Building
+
+Tested only on Linux
+
+```
+npm install
+npm run build
+```
+
+After successfully executing these commands, the folder dist/ will contain the add-in consisting of a static set of HTML, JS and CSS files together with the manifest.xml.
+
+## Contributions
+
+Contributions and issues are always welcome. Feel free to create an issue or fork the repository and experiment or make a pull request.
+
