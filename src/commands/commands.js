@@ -37,6 +37,12 @@ function getGlobal() {
 g.validateBody = validateBody;
 
 let classifications = {
+    "white": {
+        "name": "TLP White",
+        "globalFunction": "actionMarkWhite",
+        "subject": "[Classified White ⚪]",
+        "icon80": "Icon.80x80"
+    },
     "green": {
         "name": "TLP Green",
         "globalFunction": "actionMarkGreen",
@@ -57,8 +63,8 @@ let classifications = {
     }
 }
 
-const classifierRegexp = /\s*\[classified (red|green|amber) \W\]\s*/giu;
-const classifiedSubjectRegexp = /^(?:\s?re:\s?|\s?aw:\s?)*\s*\[classified (red|green|amber) \W\].*/iu;
+const classifierRegexp = /\s*\[classified (white|green|amber|red) \W\]\s*/giu;
+const classifiedSubjectRegexp = /^(?:\s?re:\s?|\s?aw:\s?)*\s*\[classified (white|green|amber|red) \W\].*/iu;
 
 function removeClassification(str) {
     return str.replace(classifierRegexp, " ").trim();
