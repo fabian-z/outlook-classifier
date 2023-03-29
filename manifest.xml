@@ -110,6 +110,21 @@
                     <SourceLocation resid="Taskpane.Url"/>
                   </Action>
                 </Control>
+                <Control xsi:type="Button" id="ActionButtonWhite">
+                  <Label resid="ActionButtonWhite.Label"/>
+                  <Supertip>
+                    <Title resid="ActionButtonWhite.Label"/>
+                    <Description resid="ActionButtonWhite.Tooltip"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16x16"/>
+                    <bt:Image size="32" resid="Icon.32x32"/>
+                    <bt:Image size="80" resid="Icon.80x80"/>
+                  </Icon>
+                  <Action xsi:type="ExecuteFunction">
+                    <FunctionName>actionMarkWhite</FunctionName>
+                  </Action>
+                </Control>
                 <Control xsi:type="Button" id="ActionButtonGreen">
                   <Label resid="ActionButtonGreen.Label"/>
                   <Supertip>
@@ -182,13 +197,16 @@
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="GroupLabel" DefaultValue="Classifier"/>
-        <bt:String id="TaskpaneButton.Label" DefaultValue="Show Taskpane"/>
+        <bt:String id="TaskpaneButton.Label" DefaultValue="TLP"/>
+        <bt:String id="ActionButtonWhite.Label" DefaultValue="Mark white"/>
         <bt:String id="ActionButtonGreen.Label" DefaultValue="Mark green"/>
         <bt:String id="ActionButtonAmber.Label" DefaultValue="Mark amber"/>
         <bt:String id="ActionButtonRed.Label" DefaultValue="Mark red"/>
       </bt:ShortStrings>
       <bt:LongStrings>
-        <bt:String id="TaskpaneButton.Tooltip" DefaultValue="Opens a pane displaying all available properties."/>
+        <bt:String id="TaskpaneButton.Tooltip" DefaultValue="Display TLP classification explanation"/>
+
+        <bt:String id="ActionButtonWhite.Tooltip" DefaultValue="Mark the message as TLP White."/>
         <bt:String id="ActionButtonGreen.Tooltip" DefaultValue="Mark the message as TLP Green."/>
         <bt:String id="ActionButtonAmber.Tooltip" DefaultValue="Mark the message as TLP Amber."/>
         <bt:String id="ActionButtonRed.Tooltip" DefaultValue="Mark the message as TLP Red."/>
