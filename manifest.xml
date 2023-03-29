@@ -182,7 +182,7 @@
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="GroupLabel" DefaultValue="Classifier"/>
-        <bt:String id="TaskpaneButton.Label" DefaultValue="Show Taskpane"/>
+        <bt:String id="TaskpaneButton.Label" DefaultValue="TLP"/>
         <bt:String id="ActionButtonGreen.Label" DefaultValue="Mark green"/>
         <bt:String id="ActionButtonAmber.Label" DefaultValue="Mark amber"/>
         <bt:String id="ActionButtonRed.Label" DefaultValue="Mark red"/>
